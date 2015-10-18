@@ -7,18 +7,41 @@ import (
 	"github.com/nsf/termbox-go"
 )
 
+const (
+	titleLine  = "Beanstalkd Stats Monitor"
+	statusLine = "[TAB] Rotate Focus  [ESC] Exit  [\u2190 \u2192 \u2191 \u2193] Scroll"
+
+	infoColor = termbox.ColorYellow | termbox.AttrBold
+)
+
 type mainFrame struct {
 	c               *beanstalk.Conn
 	statEvt         chan struct{}
 	tubesStatsGrid  *ScrollableGrid
 	systemStatsGrid *ScrollableGrid
+	controls        []Control
+	focusIndex      int
 }
 
-func clearLine(y int) {
-	w, _ := termbox.Size()
-	for i := 0; i < w; i++ {
-		termbox.SetCell(i, y, ' ', termbox.ColorDefault, termbox.ColorDefault)
+func (m *mainFrame) getSystemStats() [][]string {
+	// list tubes
+	stats, err := m.c.Stats()
+	if err != nil {
+		return nil
 	}
+
+	data := [][]string{}
+
+	row := []string{}
+	// get headers as reference
+	for _, col := range m.systemStatsGrid.Columns {
+		value, _ := stats[col.Name]
+		row = append(row, value)
+	}
+
+	data = append(data, row)
+
+	return data
 }
 
 func (m *mainFrame) getTubeStats() [][]string {
@@ -57,10 +80,14 @@ func (m *mainFrame) pollStats() {
 
 		for {
 			<-time.After(time.Second)
+			sysData := m.getSystemStats()
+			if sysData != nil {
+				m.systemStatsGrid.UpdateData(sysData)
+			}
 
-			data := m.getTubeStats()
-			if data != nil {
-				m.tubesStatsGrid.UpdateData(data)
+			tubeData := m.getTubeStats()
+			if tubeData != nil {
+				m.tubesStatsGrid.UpdateData(tubeData)
 			}
 
 			m.statEvt <- struct{}{}
@@ -71,8 +98,14 @@ func (m *mainFrame) pollStats() {
 func (m *mainFrame) onPaint() {
 	termbox.Clear(termbox.ColorDefault, termbox.ColorDefault)
 	w, h := termbox.Size()
-	m.systemStatsGrid.Resize(2, 2, w-4, 5)
-	m.tubesStatsGrid.Resize(2, 7, w-4, h-7)
+	m.systemStatsGrid.Resize(2, 3, w-4, 5)
+	m.tubesStatsGrid.Resize(2, 8, w-4, h-10)
+
+	writeText(3, 1, infoColor, termbox.ColorDefault, titleLine)
+	for i := 1; i < w; i++ {
+		termbox.SetCell(i, 2, '\u2500', termbox.ColorDefault, termbox.ColorDefault)
+	}
+	writeText(3, h-1, infoColor, termbox.ColorDefault, statusLine)
 }
 
 func (m *mainFrame) refresh() {
@@ -92,6 +125,27 @@ func (m *mainFrame) disconnect() {
 	if m.c != nil {
 		m.c.Close()
 	}
+}
+
+func (m *mainFrame) dispatchEvent(ev termbox.Event) bool {
+	for _, c := range m.controls {
+		if c.Focused() && c.HandleEvent(ev) {
+			c.Refresh()
+			return true
+		}
+	}
+	return false
+}
+
+func (m *mainFrame) rotateFocus() {
+	for _, c := range m.controls {
+		c.SetFocus(false)
+	}
+	m.focusIndex++
+	if m.focusIndex > len(m.controls)-1 {
+		m.focusIndex = 0
+	}
+	m.controls[m.focusIndex].SetFocus(true)
 }
 
 func (m *mainFrame) startLoop() {
@@ -116,7 +170,7 @@ func (m *mainFrame) startLoop() {
 		}
 	}()
 
-	//	m.pollStats()
+	m.pollStats()
 
 	m.refresh()
 
@@ -125,11 +179,7 @@ mainloop:
 		select {
 		case ev := <-evt:
 
-			if m.tubesStatsGrid.OnEvent(ev) {
-				m.refresh()
-			}
-
-			if m.systemStatsGrid.OnEvent(ev) {
+			if m.dispatchEvent(ev) {
 				m.refresh()
 			}
 
@@ -140,9 +190,9 @@ mainloop:
 					break mainloop
 
 				case termbox.KeyTab:
-				case termbox.KeyHome:
-				case termbox.KeyEnd:
-				default:
+					m.rotateFocus()
+					m.refresh()
+
 				}
 			case termbox.EventError:
 				panic(ev.Err)
@@ -158,17 +208,18 @@ mainloop:
 }
 
 func (m *mainFrame) show() {
-	if m.tubesStatsGrid == nil {
-		w, h := termbox.Size()
+	if m.controls == nil {
+		m.focusIndex = 0
+		m.controls = []Control{}
 
 		// system stats
 		m.systemStatsGrid = &ScrollableGrid{
 			X:       1,
 			Y:       2,
-			Width:   w - 2,
-			Height:  h - 4,
-			Visible: true,
+			Title:   "System Stats",
+			visible: true,
 			Columns: []GridColumn{
+				{"hostname", AlignLeft, 20},
 				{"current-jobs-urgent", AlignLeft, 20},
 				{"current-jobs-ready", AlignRight, 21},
 				{"current-jobs-reserved", AlignRight, 21},
@@ -218,18 +269,18 @@ func (m *mainFrame) show() {
 				{"binlog-max-size", AlignRight, 17},
 				{"binlog-records-written", AlignRight, 24},
 				{"binlog-records-migrated", AlignRight, 25},
-				{"id", AlignLeft, 20},
-				{"hostname", AlignLeft, 20},
+				{"id", AlignRight, 20},
 			},
 		}
 		m.systemStatsGrid.reset()
+		m.controls = append(m.controls, m.systemStatsGrid)
 
 		m.tubesStatsGrid = &ScrollableGrid{
-			X:       1,
-			Y:       2,
-			Width:   w - 2,
-			Height:  h - 4,
-			Visible: true,
+			X:         1,
+			Y:         2,
+			VScroller: true,
+			Title:     "Tubes Stats",
+			visible:   true,
 			Columns: []GridColumn{
 				{"name", AlignLeft, 20},
 				{"current-jobs-urgent", AlignRight, 21},
@@ -248,6 +299,8 @@ func (m *mainFrame) show() {
 			},
 		}
 		m.tubesStatsGrid.reset()
+		m.controls = append(m.controls, m.tubesStatsGrid)
+
 		m.tubesStatsGrid.SetCustomDrawFunc(func(index int, col, value string) (termbox.Attribute, termbox.Attribute) {
 			fg := FGColor
 			bg := BGColor
@@ -272,49 +325,55 @@ func (m *mainFrame) show() {
 			return fg, bg
 		})
 
+		if len(m.controls) > 0 {
+			m.controls[m.focusIndex].SetFocus(true)
+		}
+
 		// testing
-		m.tubesStatsGrid.UpdateData([][]string{
-			[]string{"tube 1", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 2", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 3", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-			[]string{"tube 4", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-			[]string{"tube 5", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 6", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 7", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 8", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-			[]string{"tube 9", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-			[]string{"tube 10", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 11", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 12", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 13", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-			[]string{"tube 14", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-			[]string{"tube 15", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 16", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 17", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 18", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-			[]string{"tube 19", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-			[]string{"tube 20", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 21", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 22", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 23", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-			[]string{"tube 24", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-			[]string{"tube 25", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 26", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 27", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 28", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-			[]string{"tube 29", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-			[]string{"tube 30", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 31", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 32", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 33", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-			[]string{"tube 34", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-			[]string{"tube 35", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 36", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 37", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 38", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-			[]string{"tube 39", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-			[]string{"tube 40", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-		})
+		/*
+			m.tubesStatsGrid.UpdateData([][]string{
+				[]string{"tube 1", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 2", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 3", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+				[]string{"tube 4", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+				[]string{"tube 5", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 6", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 7", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 8", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+				[]string{"tube 9", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+				[]string{"tube 10", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 11", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 12", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 13", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+				[]string{"tube 14", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+				[]string{"tube 15", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 16", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 17", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 18", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+				[]string{"tube 19", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+				[]string{"tube 20", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 21", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 22", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 23", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+				[]string{"tube 24", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+				[]string{"tube 25", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 26", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 27", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 28", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+				[]string{"tube 29", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+				[]string{"tube 30", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 31", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 32", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 33", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+				[]string{"tube 34", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+				[]string{"tube 35", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 36", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 37", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 38", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+				[]string{"tube 39", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+				[]string{"tube 40", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			})
+		*/
 	}
 	m.startLoop()
 }
