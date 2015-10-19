@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	titleLine  = "Beanstalkd Stats Monitor (v0)"
+	titleLine  = "Beanstalkd Stats Monitor"
 	statusLine = "[TAB] Switch Focus  [ESC] Exit  [\u2190 \u2192 \u2191 \u2193] Scroll"
 
 	infoColor = termbox.ColorDefault
@@ -25,6 +25,21 @@ type mainFrame struct {
 	systemStatsGrid *ScrollableGrid
 	controls        []Control
 	focusIndex      int
+}
+
+func (m *mainFrame) Clear(fg termbox.Attribute, bg termbox.Attribute) {
+	termbox.Clear(fg, bg)
+}
+
+func (m *mainFrame) SetCell(x, y int, ch rune, fg, bg termbox.Attribute) {
+	termbox.SetCell(x, y, ch, fg, bg)
+}
+
+func (m *mainFrame) WriteText(x, y int, fg, bg termbox.Attribute, s string) {
+	for _, c := range s {
+		termbox.SetCell(x, y, c, fg, bg)
+		x++
+	}
 }
 
 func (m *mainFrame) getSystemStats() [][]string {
@@ -76,47 +91,48 @@ func (m *mainFrame) getTubeStats() [][]string {
 	return data
 }
 
-func (m *mainFrame) pollStats() {
+func (m *mainFrame) pollStats(interval int) {
 	m.statEvt = make(chan struct{})
-	go func() {
 
+	collectStats := func() {
+		sysData := m.getSystemStats()
+		if sysData != nil {
+			m.systemStatsGrid.UpdateData(sysData)
+		}
+
+		tubeData := m.getTubeStats()
+		if tubeData != nil {
+			m.tubesStatsGrid.UpdateData(tubeData)
+		}
+	}
+
+	collectStats()
+
+	go func() {
 		defer close(m.statEvt)
 
 		for {
-			<-time.After(time.Second)
-			sysData := m.getSystemStats()
-			if sysData != nil {
-				m.systemStatsGrid.UpdateData(sysData)
-			}
-
-			tubeData := m.getTubeStats()
-			if tubeData != nil {
-				m.tubesStatsGrid.UpdateData(tubeData)
-			}
-
+			<-time.After(time.Duration(interval) * time.Second)
+			collectStats()
 			m.statEvt <- struct{}{}
 		}
 	}()
 }
 
-func (m *mainFrame) onPaint() {
-	termbox.Clear(termbox.ColorDefault, termbox.ColorDefault)
+func (m *mainFrame) redraw() {
+	m.Clear(termbox.ColorDefault, termbox.ColorDefault)
 	w, h := termbox.Size()
 	m.systemStatsGrid.Resize(2, 3, w-4, 5)
-	m.tubesStatsGrid.Resize(2, 8, w-4, h-10)
+	m.tubesStatsGrid.Resize(2, 10, w-4, h-11)
 
-	writeText(3, 1, infoColor, termbox.ColorDefault, titleLine)
+	m.WriteText(3, 1, infoColor, termbox.ColorDefault, titleLine)
 	// write connected host info
-	writeText(w-len(hostInfo)-3, 1, FGColor, BGColor, hostInfo)
-
-	for i := 1; i < w; i++ {
-		termbox.SetCell(i, 2, '\u2500', termbox.ColorDefault, termbox.ColorDefault)
-	}
-	writeText(3, h-1, infoColor, termbox.ColorDefault, statusLine)
+	m.WriteText(w-len(hostInfo)-3, 1, FGColor, BGColor, hostInfo)
+	m.WriteText(3, h-1, infoColor, termbox.ColorDefault, statusLine)
 }
 
 func (m *mainFrame) refresh() {
-	m.onPaint()
+	m.redraw()
 	termbox.Flush()
 }
 
@@ -139,7 +155,7 @@ func (m *mainFrame) disconnect() {
 func (m *mainFrame) dispatchEvent(ev termbox.Event) bool {
 	for _, c := range m.controls {
 		if c.Focused() && c.HandleEvent(ev) {
-			c.Refresh()
+			c.Redraw()
 			return true
 		}
 	}
@@ -157,7 +173,7 @@ func (m *mainFrame) rotateFocus() {
 	m.controls[m.focusIndex].SetFocus(true)
 }
 
-func (m *mainFrame) startLoop() {
+func (m *mainFrame) startLoop(interval int) {
 	err := termbox.Init()
 	if err != nil {
 		panic(err)
@@ -165,7 +181,6 @@ func (m *mainFrame) startLoop() {
 	defer termbox.Close()
 
 	termbox.SetInputMode(termbox.InputEsc)
-	m.refresh()
 
 	evt := make(chan termbox.Event)
 	defer close(evt)
@@ -176,7 +191,7 @@ func (m *mainFrame) startLoop() {
 		}
 	}()
 
-	m.pollStats()
+	m.pollStats(interval)
 	m.refresh()
 
 mainloop:
@@ -207,12 +222,12 @@ mainloop:
 			}
 
 		case <-m.statEvt:
-			termbox.Flush()
+			m.refresh()
 		}
 	}
 }
 
-func (m *mainFrame) show(host string, port int) {
+func (m *mainFrame) show(host string, port, pollInterval int) {
 	// try to connect, exit on failure
 	if err := m.connect(host, port); err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
@@ -227,10 +242,10 @@ func (m *mainFrame) show(host string, port int) {
 
 		// system stats
 		m.systemStatsGrid = &ScrollableGrid{
-			X:       1,
-			Y:       2,
-			Title:   "System Stats",
-			visible: true,
+			X:     1,
+			Y:     2,
+			Title: "System Stats",
+			BP:    m,
 			Columns: []GridColumn{
 				{"hostname", AlignLeft, 20},
 				{"current-jobs-urgent", AlignRight, 20},
@@ -286,6 +301,7 @@ func (m *mainFrame) show(host string, port int) {
 			}
 			return FGColor, BGColor
 		})
+		m.systemStatsGrid.SetVisible(true)
 		m.systemStatsGrid.reset()
 		m.controls = append(m.controls, m.systemStatsGrid)
 
@@ -294,7 +310,7 @@ func (m *mainFrame) show(host string, port int) {
 			Y:         2,
 			VScroller: true,
 			Title:     "Tubes Stats",
-			visible:   true,
+			BP:        m,
 			Columns: []GridColumn{
 				{"name", AlignLeft, 20},
 				{"current-jobs-urgent", AlignRight, 21},
@@ -312,15 +328,13 @@ func (m *mainFrame) show(host string, port int) {
 				{"pause-time-left", AlignRight, 17},
 			},
 		}
+		m.tubesStatsGrid.SetVisible(true)
 		m.tubesStatsGrid.reset()
 		m.controls = append(m.controls, m.tubesStatsGrid)
 
 		m.tubesStatsGrid.SetCustomDrawFunc(func(index int, col, value string) (termbox.Attribute, termbox.Attribute) {
 			fg := FGColor
 			bg := BGColor
-			if index%2 == 0 {
-				// striped rows
-			}
 
 			switch col {
 			case "current-jobs-delayed":
@@ -336,58 +350,16 @@ func (m *mainFrame) show(host string, port int) {
 
 			}
 
+			if index%2 == 0 {
+				// striped rows
+				fg |= termbox.AttrBold
+			}
 			return fg, bg
 		})
 
 		if len(m.controls) > 0 {
 			m.controls[m.focusIndex].SetFocus(true)
 		}
-
-		// testing
-		/*
-			m.tubesStatsGrid.UpdateData([][]string{
-				[]string{"tube 1", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 2", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 3", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-				[]string{"tube 4", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-				[]string{"tube 5", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 6", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 7", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 8", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-				[]string{"tube 9", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-				[]string{"tube 10", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 11", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 12", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 13", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-				[]string{"tube 14", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-				[]string{"tube 15", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 16", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 17", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 18", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-				[]string{"tube 19", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-				[]string{"tube 20", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 21", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 22", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 23", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-				[]string{"tube 24", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-				[]string{"tube 25", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 26", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 27", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 28", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-				[]string{"tube 29", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-				[]string{"tube 30", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 31", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 32", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 33", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-				[]string{"tube 34", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-				[]string{"tube 35", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 36", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 37", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-				[]string{"tube 38", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-				[]string{"tube 39", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-				[]string{"tube 40", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			})
-		*/
 	}
-	m.startLoop()
+	m.startLoop(pollInterval)
 }

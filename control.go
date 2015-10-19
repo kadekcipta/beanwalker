@@ -11,10 +11,16 @@ const (
 
 type Control interface {
 	HandleEvent(ev termbox.Event) bool
-	Refresh()
+	Redraw()
 	Resize(x, y, w, h int)
 	SetFocus(v bool)
 	Focused() bool
 	SetVisible(b bool)
 	Visible() bool
+}
+
+type BufferProxy interface {
+	Clear(termbox.Attribute, termbox.Attribute)
+	SetCell(x, y int, ch rune, fg, bg termbox.Attribute)
+	WriteText(x, y int, fg, bg termbox.Attribute, s string)
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/nsf/termbox-go"
 )
@@ -14,7 +15,7 @@ const (
 	AlignLeft TextAlign = iota
 	AlignRight
 
-	titleOffset   = 0
+	titleOffset   = -1
 	columnsOffset = 1
 	vHintsOffset  = 2
 	dataOffset    = 3
@@ -51,14 +52,15 @@ func (c *GridColumn) Format(s string, vars ...bool) string {
 // ScrollableGrid represents the interface to arrange string data in tabular format
 // Vertical and horizontal scrolling are provided by arrows keys
 type ScrollableGrid struct {
-	X         int
-	Y         int
-	Width     int
-	Height    int
-	Columns   []GridColumn
-	VScroller bool
-	Title     string
-
+	sync.RWMutex
+	X              int
+	Y              int
+	Width          int
+	Height         int
+	Columns        []GridColumn
+	VScroller      bool
+	Title          string
+	BP             BufferProxy
 	visible        bool
 	focused        bool
 	dataStartY     int
@@ -72,17 +74,17 @@ func (s *ScrollableGrid) SetCustomDrawFunc(f CustomDrawFunc) {
 	s.customDrawFunc = f
 }
 
-func (s *ScrollableGrid) clearLine(y int, vars ...termbox.Attribute) {
+func (s *ScrollableGrid) clearRow(y int, vars ...termbox.Attribute) {
 	bg := termbox.ColorDefault
 	if len(vars) > 0 {
 		bg = vars[0]
 	}
 	for i := s.X; i < s.X+s.Width-1; i++ {
-		termbox.SetCell(i, y, ' ', termbox.ColorDefault, bg)
+		s.BP.SetCell(i, y, ' ', termbox.ColorDefault, bg)
 	}
 }
 
-func (s *ScrollableGrid) drawLine(cellY int, row []string, fg, bg termbox.Attribute, customizable bool, vars ...bool) {
+func (s *ScrollableGrid) drawRow(cellY int, row []string, fg, bg termbox.Attribute, customizable bool, vars ...bool) {
 	titleFormat := false
 	if len(vars) > 0 {
 		titleFormat = true
@@ -91,7 +93,7 @@ func (s *ScrollableGrid) drawLine(cellY int, row []string, fg, bg termbox.Attrib
 	totalLen := 0
 	dx := s.X
 
-	s.clearLine(cellY, bg)
+	s.clearRow(cellY, bg)
 
 	// always draw the first heading
 	for i := 0; i < len(row); i++ {
@@ -107,9 +109,9 @@ func (s *ScrollableGrid) drawLine(cellY int, row []string, fg, bg termbox.Attrib
 			if customizable && s.customDrawFunc != nil {
 				dataIndex := cellY - s.dataStartY
 				fg, bg := s.customDrawFunc(dataIndex, s.Columns[i].Name, row[i])
-				writeText(dx, cellY, fg, bg, item)
+				s.BP.WriteText(dx, cellY, fg, bg, item)
 			} else {
-				writeText(dx, cellY, fg, bg, item)
+				s.BP.WriteText(dx, cellY, fg, bg, item)
 			}
 
 			dx += tw
@@ -117,18 +119,35 @@ func (s *ScrollableGrid) drawLine(cellY int, row []string, fg, bg termbox.Attrib
 	}
 }
 
+func (s *ScrollableGrid) drawBox() {
+	s.BP.SetCell(s.X-1, s.Y-1, '┌', FGColor, BGColor)
+	s.BP.SetCell(s.X+s.Width-1, s.Y-1, '┐', FGColor, BGColor)
+	for i := 0; i < s.Width-1; i++ {
+		s.BP.SetCell(s.X+i, s.Y-1, '─', FGColor, BGColor)
+		s.BP.SetCell(s.X+i, s.Y-1+s.Height, '─', FGColor, BGColor)
+	}
+
+	for y := 0; y < s.Height-1; y++ {
+		s.BP.SetCell(s.X-1, s.Y+y, '│', FGColor, BGColor)
+		s.BP.SetCell(s.X+s.Width-1, s.Y+y, '│', FGColor, BGColor)
+	}
+
+	s.BP.SetCell(s.X-1, s.Y-1+s.Height, '└', FGColor, BGColor)
+	s.BP.SetCell(s.X+s.Width-1, s.Y-1+s.Height, '┘', FGColor, BGColor)
+}
+
 func (s *ScrollableGrid) drawHints() {
 	if !s.Focused() {
 		return
 	}
 
-	writeText(s.X-2, s.Y+columnsOffset, FGColor|termbox.AttrBold, BGColor, "\u2190")
-	writeText(s.X+s.Width, s.Y+columnsOffset, FGColor|termbox.AttrBold, BGColor, "\u2192")
+	s.BP.WriteText(s.X-2, s.Y+columnsOffset, FGColor|termbox.AttrBold, BGColor, "\u2190")
+	s.BP.WriteText(s.X+s.Width, s.Y+columnsOffset, FGColor|termbox.AttrBold, BGColor, "\u2192")
 
 	if s.VScroller {
 		cx := (s.X + s.Width) / 2
-		writeText(cx, s.Y+vHintsOffset, FGColor|termbox.AttrBold, BGColor, "\u2191")
-		writeText(cx, s.Y+s.Height-1, FGColor|termbox.AttrBold, BGColor, "\u2193")
+		s.BP.WriteText(cx, s.Y+vHintsOffset, FGColor|termbox.AttrBold, BGColor, "\u2191")
+		s.BP.WriteText(cx, s.Y+s.Height-1, FGColor|termbox.AttrBold, BGColor, "\u2193")
 	}
 }
 
@@ -143,30 +162,37 @@ func (s *ScrollableGrid) drawColumns() {
 		highlightBGColor = BGColor
 		highlightFGColor |= termbox.AttrBold
 	}
-	s.drawLine(s.Y+columnsOffset, headers, highlightFGColor, highlightBGColor, false, true)
+	s.drawRow(s.Y+columnsOffset, headers, highlightFGColor, highlightBGColor, false, true)
 }
 
 func (s *ScrollableGrid) drawData() {
+
 	maxRows := s.availableRowsSpace()
 	dataIndex := 0
+
 	for i := s.vScrollPos; i < len(s.data); i++ {
 		row := s.data[i]
 		if dataIndex < maxRows {
-			s.drawLine(s.Y+dataOffset+dataIndex, row, FGColor, BGColor, true)
+			s.drawRow(s.Y+dataOffset+dataIndex, row, FGColor, BGColor, true)
 		}
 		dataIndex++
 	}
 }
 
 func (s *ScrollableGrid) drawTitle() {
-	writeText(s.X, s.Y+titleOffset, FGColor|termbox.AttrUnderline, BGColor, strings.ToUpper(s.Title))
+	cx := s.X + (s.Width-len(s.Title))/2
+	s.BP.WriteText(cx, s.Y+titleOffset, FGColor, FGColor|termbox.AttrReverse, strings.ToUpper(s.Title))
 }
 
 func (s *ScrollableGrid) drawBuffer() {
-	s.drawTitle()
+	s.Lock()
+	defer s.Unlock()
+
 	s.drawColumns()
 	s.drawHints()
 	s.drawData()
+	s.drawBox()
+	s.drawTitle()
 }
 
 func (s *ScrollableGrid) availableRowsSpace() int {
@@ -199,7 +225,7 @@ func (s *ScrollableGrid) Resize(x, y, w, h int) {
 	s.X = x + 1
 	s.Y = y
 	s.adjustScrollPos()
-	s.Refresh()
+	s.Redraw()
 }
 
 func (s *ScrollableGrid) HandleEvent(ev termbox.Event) bool {
@@ -229,7 +255,7 @@ func (s *ScrollableGrid) HandleEvent(ev termbox.Event) bool {
 			}
 		}
 	case termbox.EventResize:
-		s.Refresh()
+		s.Redraw()
 		return true
 	}
 
@@ -237,6 +263,9 @@ func (s *ScrollableGrid) HandleEvent(ev termbox.Event) bool {
 }
 
 func (s *ScrollableGrid) UpdateData(rows [][]string) {
+	s.Lock()
+	defer s.Unlock()
+
 	// clear data
 	s.data = [][]string{}
 	if len(rows) > 0 {
@@ -248,10 +277,9 @@ func (s *ScrollableGrid) UpdateData(rows [][]string) {
 		}
 	}
 	s.adjustScrollPos()
-	s.Refresh()
 }
 
-func (s *ScrollableGrid) Refresh() {
+func (s *ScrollableGrid) Redraw() {
 	if s.visible {
 		s.drawBuffer()
 	}
@@ -260,7 +288,7 @@ func (s *ScrollableGrid) Refresh() {
 func (s *ScrollableGrid) SetFocus(v bool) {
 	s.focused = v
 	if s.visible {
-		s.Refresh()
+		s.Redraw()
 	}
 }
 
@@ -270,7 +298,7 @@ func (s *ScrollableGrid) Focused() bool {
 
 func (s *ScrollableGrid) SetVisible(v bool) {
 	s.visible = v
-	s.Refresh()
+	s.Redraw()
 }
 
 func (s *ScrollableGrid) Visible() bool {
@@ -288,7 +316,7 @@ func (s *ScrollableGrid) scrollRight() {
 	if s.hScrollPos > max {
 		s.hScrollPos = max
 	}
-	s.Refresh()
+	s.Redraw()
 }
 
 func (s *ScrollableGrid) scrollLeft() {
@@ -296,14 +324,14 @@ func (s *ScrollableGrid) scrollLeft() {
 	if s.hScrollPos < 1 {
 		s.hScrollPos = 1
 	}
-	s.Refresh()
+	s.Redraw()
 }
 
 func (s *ScrollableGrid) scrollUp() {
 	if s.VScroller {
 		s.vScrollPos--
 		s.adjustScrollPos()
-		s.Refresh()
+		s.Redraw()
 	}
 }
 
@@ -311,6 +339,6 @@ func (s *ScrollableGrid) scrollDown() {
 	if s.VScroller {
 		s.vScrollPos++
 		s.adjustScrollPos()
-		s.Refresh()
+		s.Redraw()
 	}
 }
