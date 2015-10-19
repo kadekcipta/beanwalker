@@ -14,11 +14,6 @@ const (
 	AlignLeft TextAlign = iota
 	AlignRight
 
-	HeadingBGColor = termbox.ColorBlue
-	HeadingFGColor = termbox.ColorBlack
-	BGColor        = termbox.ColorDefault
-	FGColor        = termbox.ColorDefault
-
 	titleOffset   = 0
 	columnsOffset = 1
 	vHintsOffset  = 2
@@ -142,11 +137,11 @@ func (s *ScrollableGrid) drawColumns() {
 	for _, c := range s.Columns {
 		headers = append(headers, c.Name)
 	}
-	highlightFGColor := termbox.ColorBlack
-	highlightBGColor := termbox.ColorWhite
+	highlightFGColor := FGColor
+	highlightBGColor := FGColor | termbox.AttrReverse
 	if !s.Focused() {
 		highlightBGColor = BGColor
-		highlightFGColor = FGColor | termbox.AttrBold
+		highlightFGColor |= termbox.AttrBold
 	}
 	s.drawLine(s.Y+columnsOffset, headers, highlightFGColor, highlightBGColor, false, true)
 }
@@ -164,7 +159,7 @@ func (s *ScrollableGrid) drawData() {
 }
 
 func (s *ScrollableGrid) drawTitle() {
-	writeText(s.X, s.Y+titleOffset, FGColor|termbox.AttrBold, BGColor, strings.ToUpper(s.Title))
+	writeText(s.X, s.Y+titleOffset, FGColor|termbox.AttrUnderline, BGColor, strings.ToUpper(s.Title))
 }
 
 func (s *ScrollableGrid) drawBuffer() {

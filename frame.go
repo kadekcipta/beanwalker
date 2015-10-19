@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"os"
 	"time"
 
 	"github.com/kr/beanstalk"
@@ -8,11 +10,13 @@ import (
 )
 
 const (
-	titleLine  = "Beanstalkd Stats Monitor"
-	statusLine = "[TAB] Rotate Focus  [ESC] Exit  [\u2190 \u2192 \u2191 \u2193] Scroll"
+	titleLine  = "Beanstalkd Stats Monitor (v0)"
+	statusLine = "[TAB] Switch Focus  [ESC] Exit  [\u2190 \u2192 \u2191 \u2193] Scroll"
 
-	infoColor = termbox.ColorYellow | termbox.AttrBold
+	infoColor = termbox.ColorDefault
 )
+
+var hostInfo string
 
 type mainFrame struct {
 	c               *beanstalk.Conn
@@ -102,6 +106,9 @@ func (m *mainFrame) onPaint() {
 	m.tubesStatsGrid.Resize(2, 8, w-4, h-10)
 
 	writeText(3, 1, infoColor, termbox.ColorDefault, titleLine)
+	// write connected host info
+	writeText(w-len(hostInfo)-3, 1, FGColor, BGColor, hostInfo)
+
 	for i := 1; i < w; i++ {
 		termbox.SetCell(i, 2, '\u2500', termbox.ColorDefault, termbox.ColorDefault)
 	}
@@ -113,12 +120,14 @@ func (m *mainFrame) refresh() {
 	termbox.Flush()
 }
 
-func (m *mainFrame) connect() {
-	c, err := beanstalk.Dial("tcp", "127.0.0.1:11300")
+func (m *mainFrame) connect(host string, port int) error {
+	c, err := beanstalk.Dial("tcp", fmt.Sprintf("%s:%d", host, port))
 	if err != nil {
-		return
+		return err
 	}
 	m.c = c
+
+	return nil
 }
 
 func (m *mainFrame) disconnect() {
@@ -155,9 +164,6 @@ func (m *mainFrame) startLoop() {
 	}
 	defer termbox.Close()
 
-	m.connect()
-	defer m.disconnect()
-
 	termbox.SetInputMode(termbox.InputEsc)
 	m.refresh()
 
@@ -171,7 +177,6 @@ func (m *mainFrame) startLoop() {
 	}()
 
 	m.pollStats()
-
 	m.refresh()
 
 mainloop:
@@ -207,7 +212,15 @@ mainloop:
 	}
 }
 
-func (m *mainFrame) show() {
+func (m *mainFrame) show(host string, port int) {
+	// try to connect, exit on failure
+	if err := m.connect(host, port); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(-1)
+	}
+
+	hostInfo = fmt.Sprintf("Connected to %s:%d", host, port)
+
 	if m.controls == nil {
 		m.focusIndex = 0
 		m.controls = []Control{}
@@ -220,16 +233,11 @@ func (m *mainFrame) show() {
 			visible: true,
 			Columns: []GridColumn{
 				{"hostname", AlignLeft, 20},
-				{"current-jobs-urgent", AlignLeft, 20},
+				{"current-jobs-urgent", AlignRight, 20},
 				{"current-jobs-ready", AlignRight, 21},
-				{"current-jobs-reserved", AlignRight, 21},
+				{"current-jobs-reserved", AlignRight, 23},
 				{"current-jobs-delayed", AlignRight, 21},
 				{"current-jobs-buried", AlignRight, 21},
-				{"current-jobs-urgent", AlignRight, 20},
-				{"current-jobs-ready", AlignRight, 20},
-				{"current-jobs-reserved", AlignRight, 20},
-				{"current-jobs-delayed", AlignRight, 20},
-				{"current-jobs-buried", AlignRight, 20},
 				{"cmd-put", AlignRight, 9},
 				{"cmd-peek", AlignRight, 10},
 				{"cmd-peek-ready", AlignRight, 16},
@@ -272,6 +280,12 @@ func (m *mainFrame) show() {
 				{"id", AlignRight, 20},
 			},
 		}
+		m.systemStatsGrid.SetCustomDrawFunc(func(index int, col, value string) (termbox.Attribute, termbox.Attribute) {
+			if col == m.systemStatsGrid.Columns[0].Name {
+				return termbox.ColorRed | termbox.AttrBold, BGColor
+			}
+			return FGColor, BGColor
+		})
 		m.systemStatsGrid.reset()
 		m.controls = append(m.controls, m.systemStatsGrid)
 
