@@ -120,20 +120,26 @@ func (s *ScrollableGrid) drawRow(cellY int, row []string, fg, bg termbox.Attribu
 }
 
 func (s *ScrollableGrid) drawBox() {
-	s.BP.SetCell(s.X-1, s.Y-1, '┌', FGColor, BGColor)
-	s.BP.SetCell(s.X+s.Width-1, s.Y-1, '┐', FGColor, BGColor)
+	fg := FGColor
+	bg := BGColor
+	if s.Focused() {
+		fg |= termbox.AttrBold
+	}
+
+	s.BP.SetCell(s.X-1, s.Y-1, '┌', fg, bg)
+	s.BP.SetCell(s.X+s.Width-1, s.Y-1, '┐', fg, bg)
 	for i := 0; i < s.Width-1; i++ {
-		s.BP.SetCell(s.X+i, s.Y-1, '─', FGColor, BGColor)
-		s.BP.SetCell(s.X+i, s.Y-1+s.Height, '─', FGColor, BGColor)
+		s.BP.SetCell(s.X+i, s.Y-1, '─', fg, bg)
+		s.BP.SetCell(s.X+i, s.Y-1+s.Height, '─', fg, bg)
 	}
 
 	for y := 0; y < s.Height-1; y++ {
-		s.BP.SetCell(s.X-1, s.Y+y, '│', FGColor, BGColor)
-		s.BP.SetCell(s.X+s.Width-1, s.Y+y, '│', FGColor, BGColor)
+		s.BP.SetCell(s.X-1, s.Y+y, '│', fg, bg)
+		s.BP.SetCell(s.X+s.Width-1, s.Y+y, '│', fg, bg)
 	}
 
-	s.BP.SetCell(s.X-1, s.Y-1+s.Height, '└', FGColor, BGColor)
-	s.BP.SetCell(s.X+s.Width-1, s.Y-1+s.Height, '┘', FGColor, BGColor)
+	s.BP.SetCell(s.X-1, s.Y-1+s.Height, '└', fg, bg)
+	s.BP.SetCell(s.X+s.Width-1, s.Y-1+s.Height, '┘', fg, bg)
 }
 
 func (s *ScrollableGrid) drawHints() {

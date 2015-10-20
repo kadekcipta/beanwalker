@@ -125,10 +125,10 @@ func (m *mainFrame) redraw() {
 	m.systemStatsGrid.Resize(2, 3, w-4, 5)
 	m.tubesStatsGrid.Resize(2, 10, w-4, h-11)
 
-	m.WriteText(3, 1, infoColor, termbox.ColorDefault, titleLine)
+	m.WriteText(2, 1, infoColor, termbox.ColorDefault, titleLine)
 	// write connected host info
 	m.WriteText(w-len(hostInfo)-3, 1, FGColor, BGColor, hostInfo)
-	m.WriteText(3, h-1, infoColor, termbox.ColorDefault, statusLine)
+	m.WriteText(2, h-1, infoColor, termbox.ColorDefault, statusLine)
 }
 
 func (m *mainFrame) refresh() {
@@ -244,7 +244,7 @@ func (m *mainFrame) show(host string, port, pollInterval int) {
 		m.systemStatsGrid = &ScrollableGrid{
 			X:     1,
 			Y:     2,
-			Title: "System Stats",
+			Title: "[ System Stats ]",
 			BP:    m,
 			Columns: []GridColumn{
 				{"hostname", AlignLeft, 20},
@@ -309,7 +309,7 @@ func (m *mainFrame) show(host string, port, pollInterval int) {
 			X:         1,
 			Y:         2,
 			VScroller: true,
-			Title:     "Tubes Stats",
+			Title:     "[ Tubes Stats ]",
 			BP:        m,
 			Columns: []GridColumn{
 				{"name", AlignLeft, 20},
