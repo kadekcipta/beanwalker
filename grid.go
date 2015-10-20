@@ -66,6 +66,7 @@ type ScrollableGrid struct {
 	dataStartY     int
 	hScrollPos     int
 	vScrollPos     int
+	selectionIndex int
 	data           [][]string
 	customDrawFunc CustomDrawFunc
 }
@@ -176,10 +177,17 @@ func (s *ScrollableGrid) drawData() {
 	maxRows := s.availableRowsSpace()
 	dataIndex := 0
 
+	visibleSelectionIndex := s.selectionIndex
+
 	for i := s.vScrollPos; i < len(s.data); i++ {
 		row := s.data[i]
+		fg := FGColor
+		bg := BGColor
+		if visibleSelectionIndex == i {
+			bg = BGSelectionColor | termbox.AttrReverse
+		}
 		if dataIndex < maxRows {
-			s.drawRow(s.Y+dataOffset+dataIndex, row, FGColor, BGColor, true)
+			s.drawRow(s.Y+dataOffset+dataIndex, row, fg, bg, true)
 		}
 		dataIndex++
 	}
@@ -206,6 +214,20 @@ func (s *ScrollableGrid) availableRowsSpace() int {
 }
 
 func (s *ScrollableGrid) adjustScrollPos() {
+	dataLen := len(s.data)
+
+	if dataLen == 0 {
+		s.selectionIndex = -1
+	} else {
+		// adjust selection
+		if s.selectionIndex < 0 {
+			s.selectionIndex = 0
+		}
+		if s.selectionIndex > dataLen-1 {
+			s.selectionIndex = dataLen - 1
+		}
+	}
+
 	// adjust scrolling up
 	if s.vScrollPos < 0 {
 		s.vScrollPos = 0
@@ -213,7 +235,7 @@ func (s *ScrollableGrid) adjustScrollPos() {
 	}
 
 	// adjust scrolling down
-	dataLen := len(s.data)
+
 	maxScroll := 0
 	if dataLen > s.availableRowsSpace() {
 		maxScroll = dataLen - s.availableRowsSpace()
@@ -335,6 +357,7 @@ func (s *ScrollableGrid) scrollLeft() {
 
 func (s *ScrollableGrid) scrollUp() {
 	if s.VScroller {
+		s.selectionIndex--
 		s.vScrollPos--
 		s.adjustScrollPos()
 		s.Redraw()
@@ -343,6 +366,7 @@ func (s *ScrollableGrid) scrollUp() {
 
 func (s *ScrollableGrid) scrollDown() {
 	if s.VScroller {
+		s.selectionIndex++
 		s.vScrollPos++
 		s.adjustScrollPos()
 		s.Redraw()

@@ -191,7 +191,7 @@ func (m *mainFrame) startLoop(interval int) {
 		}
 	}()
 
-	m.pollStats(interval)
+	//	m.pollStats(interval)
 	m.refresh()
 
 mainloop:
@@ -331,35 +331,79 @@ func (m *mainFrame) show(host string, port, pollInterval int) {
 		m.tubesStatsGrid.SetVisible(true)
 		m.tubesStatsGrid.reset()
 		m.controls = append(m.controls, m.tubesStatsGrid)
+		/*
+			m.tubesStatsGrid.SetCustomDrawFunc(func(index int, col, value string) (termbox.Attribute, termbox.Attribute) {
+				fg := FGColor
+				bg := BGColor
 
-		m.tubesStatsGrid.SetCustomDrawFunc(func(index int, col, value string) (termbox.Attribute, termbox.Attribute) {
-			fg := FGColor
-			bg := BGColor
+				switch col {
+				case "current-jobs-delayed":
+					fg = termbox.ColorYellow
 
-			switch col {
-			case "current-jobs-delayed":
-				fg = termbox.ColorYellow
+				case "current-jobs-buried":
+					fg = termbox.ColorRed
 
-			case "current-jobs-buried":
-				fg = termbox.ColorRed
+				case "current-jobs-ready":
+					if value != "0" {
+						fg = termbox.ColorGreen
+					}
 
-			case "current-jobs-ready":
-				if value != "0" {
-					fg = termbox.ColorGreen
 				}
 
-			}
-
-			if index%2 == 0 {
-				// striped rows
-				fg |= termbox.AttrBold
-			}
-			return fg, bg
-		})
-
+				if index%2 == 0 {
+					// striped rows
+					fg |= termbox.AttrBold
+				}
+				return fg, bg
+			})
+		*/
 		if len(m.controls) > 0 {
 			m.controls[m.focusIndex].SetFocus(true)
 		}
+
+		m.tubesStatsGrid.UpdateData([][]string{
+			[]string{"tube 1", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 2", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 3", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+			[]string{"tube 4", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+			[]string{"tube 5", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 6", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 7", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 8", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+			[]string{"tube 9", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+			[]string{"tube 10", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 11", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 12", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 13", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+			[]string{"tube 14", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+			[]string{"tube 15", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 16", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 17", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 18", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+			[]string{"tube 19", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+			[]string{"tube 20", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 21", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 22", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 23", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+			[]string{"tube 24", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+			[]string{"tube 25", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 26", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 27", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 28", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+			[]string{"tube 29", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+			[]string{"tube 30", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 31", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 32", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 33", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+			[]string{"tube 34", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+			[]string{"tube 35", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 36", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 37", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 38", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+			[]string{"tube 39", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+			[]string{"tube 40", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+		})
 	}
+
 	m.startLoop(pollInterval)
 }

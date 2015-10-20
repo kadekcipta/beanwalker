@@ -5,8 +5,10 @@ import (
 )
 
 const (
-	BGColor = termbox.ColorDefault
-	FGColor = termbox.ColorDefault
+	BGColor          = termbox.ColorDefault
+	FGColor          = termbox.ColorDefault
+	BGSelectionColor = termbox.ColorDefault
+	FGSelectionColor = termbox.ColorDefault | termbox.AttrReverse
 )
 
 type Control interface {
