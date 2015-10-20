@@ -8,7 +8,7 @@ const (
 	BGColor          = termbox.ColorDefault
 	FGColor          = termbox.ColorDefault
 	BGSelectionColor = termbox.ColorDefault
-	FGSelectionColor = termbox.ColorDefault | termbox.AttrReverse
+	FGSelectionColor = termbox.ColorBlue | termbox.AttrReverse
 )
 
 type Control interface {
