@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/mattn/go-runewidth"
 	"github.com/nsf/termbox-go"
 )
 
@@ -67,7 +68,6 @@ type ScrollableGrid struct {
 	dataBounds     BufferRegion
 	data           [][]string
 	customDrawFunc CustomDrawFunc
-	debugText      string
 	sync.RWMutex
 }
 
@@ -156,13 +156,13 @@ func (s *ScrollableGrid) drawHints() {
 		return
 	}
 	// horizontal scroller
-	s.BP.WriteText(s.bounds.X-1, s.bounds.Y+columnsOffset, FGColor|termbox.AttrBold, BGColor|termbox.AttrReverse, "\u2190")
-	s.BP.WriteText(s.bounds.X+s.bounds.W+1, s.bounds.Y+columnsOffset, FGColor|termbox.AttrBold, BGColor|termbox.AttrReverse, "\u2192")
+	s.BP.WriteText(s.bounds.X, s.bounds.Y+columnsOffset, FGColor|termbox.AttrBold, BGColor, "\u2190")
+	s.BP.WriteText(s.bounds.X+s.bounds.W, s.bounds.Y+columnsOffset, FGColor|termbox.AttrBold, BGColor, "\u2192")
 	// vertical scroller
 	if s.VScroller {
 		cx := (s.bounds.X + s.bounds.W) / 2
-		s.BP.WriteText(cx, s.dataBounds.Y-1, FGColor|termbox.AttrBold, BGColor|termbox.AttrReverse, " \u2191 ")
-		s.BP.WriteText(cx, s.dataBounds.Y+s.dataBounds.H, FGColor|termbox.AttrBold, BGColor|termbox.AttrReverse, " \u2193 ")
+		s.BP.WriteText(cx, s.dataBounds.Y-1, FGColor|termbox.AttrBold, BGColor, " \u2191 ")
+		s.BP.WriteText(cx, s.dataBounds.Y+s.dataBounds.H, FGColor|termbox.AttrBold, BGColor, " \u2193 ")
 	}
 }
 
@@ -210,15 +210,14 @@ func (s *ScrollableGrid) drawData() {
 }
 
 func (s *ScrollableGrid) drawTitle() {
-	cx := s.bounds.X + (s.bounds.W-len(s.Title))/2
+	cx := s.bounds.X + (s.bounds.W-runewidth.StringWidth(s.Title))/2
 	s.BP.WriteText(cx, s.bounds.Y+titleOffset, FGColor, FGColor, strings.ToUpper(s.Title))
 }
 
 func (s *ScrollableGrid) drawBuffer() {
-	s.Lock()
-	defer s.Unlock()
+	s.RLock()
+	defer s.RUnlock()
 
-	s.BP.WriteText(0, 0, FGColor, BGColor, s.debugText)
 	s.drawHeading()
 	s.drawBorder()
 	s.drawTitle()
@@ -250,7 +249,6 @@ func (s *ScrollableGrid) adjustScrollPos() {
 	// scroll data when beyond viewport
 	delta := s.dataIndex - s.vScrollPos
 	if delta < 0 || delta > s.availableRowsSpace()-1 {
-		s.debugText = fmt.Sprintf("delta: %d", delta)
 		if delta > 0 {
 			delta = delta - s.availableRowsSpace() + 1
 		}
@@ -295,10 +293,6 @@ func (s *ScrollableGrid) HandleEvent(ev termbox.Event) bool {
 				s.scrollDown()
 				return true
 
-			case termbox.KeyEnter:
-				s.debugText = fmt.Sprintf("data index: %d", s.dataIndex)
-				s.Redraw()
-				return true
 			}
 		}
 	case termbox.EventResize:

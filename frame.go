@@ -6,14 +6,20 @@ import (
 	"time"
 
 	"github.com/kr/beanstalk"
+	"github.com/mattn/go-runewidth"
 	"github.com/nsf/termbox-go"
 )
+
+type cmd struct {
+	sc     string
+	info   string
+	action func()
+}
 
 const (
 	titleLine            = "Beanstalkd Stats Monitor"
 	connectionInfo       = "Host: %s:%d"
 	beanstalkVersionInfo = "Server version: %s"
-	statusLine           = "[TAB] Switch Focus  [ESC] Exit  [\u2190 \u2192 \u2191 \u2193] Scroll"
 
 	infoColor = termbox.ColorDefault
 )
@@ -28,6 +34,8 @@ type mainFrame struct {
 	controls        []Control
 	focusIndex      int
 	bsVersion       string
+	debugText       string
+	commands        []cmd
 }
 
 func (m *mainFrame) Clear(fg termbox.Attribute, bg termbox.Attribute) {
@@ -42,6 +50,46 @@ func (m *mainFrame) WriteText(x, y int, fg, bg termbox.Attribute, s string) {
 	for _, c := range s {
 		termbox.SetCell(x, y, c, fg, bg)
 		x++
+	}
+}
+
+func (m *mainFrame) debug(s string) {
+	m.debugText = s
+	m.refresh()
+}
+
+func (m *mainFrame) quit()       { m.debug("") }
+func (m *mainFrame) pauseTube()  { m.debug("pause") }
+func (m *mainFrame) clearJobs()  { m.debug("clear jobs") }
+func (m *mainFrame) deleteTube() { m.debug("delete tube") }
+
+func (m *mainFrame) execCommand(sc string) {
+	if !m.tubesStatsGrid.Focused() {
+		return
+	}
+	for _, c := range m.commands {
+		if c.sc == sc && c.action != nil {
+			c.action()
+		}
+	}
+}
+
+func (m *mainFrame) initCommands(x, y int) {
+	m.commands = []cmd{
+		{"q", "Quit", m.quit},
+		{"p", "Pause", m.pauseTube},
+		{"c", "Clear Jobs", m.clearJobs},
+		{"d", "Delete", m.deleteTube},
+		{"TAB", "Navigate", nil},
+		{"[\u2190 \u2192 \u2191 \u2193]", "Scroll", nil},
+	}
+
+	dx := x
+	for _, c := range m.commands {
+		m.WriteText(dx, y, termbox.ColorRed, BGColor, c.sc)
+		dx += runewidth.StringWidth(c.sc) + 1
+		m.WriteText(dx, y, FGColor, BGColor, c.info)
+		dx += runewidth.StringWidth(c.info) + 2
 	}
 }
 
@@ -125,14 +173,15 @@ func (m *mainFrame) pollStats(interval int) {
 func (m *mainFrame) redraw() {
 	m.Clear(termbox.ColorDefault, termbox.ColorDefault)
 	w, h := termbox.Size()
-	m.systemStatsGrid.Resize(BufferRegion{1, 3, w - 3, 5})
-	m.tubesStatsGrid.Resize(BufferRegion{1, 10, w - 3, h - 11})
+	m.systemStatsGrid.Resize(BufferRegion{1, 2, w - 3, 5})
+	m.tubesStatsGrid.Resize(BufferRegion{1, 8, w - 3, h - 10})
 
-	m.WriteText(1, 1, infoColor, termbox.ColorDefault, titleLine)
+	m.WriteText(1, 0, infoColor, termbox.ColorDefault, titleLine)
 	beanstalkInfo := fmt.Sprintf(beanstalkVersionInfo, m.bsVersion)
-	m.WriteText(w-len(hostInfo)-1, 1, FGColor, BGColor, hostInfo)
-	m.WriteText(w-len(beanstalkInfo)-1, 2, FGColor|termbox.AttrBold, BGColor, beanstalkInfo)
-	m.WriteText(1, h-1, termbox.ColorWhite, BGColor, statusLine)
+	m.WriteText(w-runewidth.StringWidth(hostInfo)-1, 0, FGColor, BGColor, hostInfo)
+	m.WriteText(w-runewidth.StringWidth(beanstalkInfo)-1, 1, FGColor|termbox.AttrBold, BGColor, beanstalkInfo)
+	m.initCommands(2, h-2)
+	m.WriteText(w-runewidth.StringWidth(m.debugText), h-1, FGColor, BGColor, m.debugText)
 }
 
 func (m *mainFrame) refresh() {
@@ -176,12 +225,17 @@ func (m *mainFrame) dispatchEvent(ev termbox.Event) bool {
 	return false
 }
 
-func (m *mainFrame) rotateFocus() {
+func (m *mainFrame) navigateFocus() {
+	// list of visible controls
+	visibles := []Control{}
 	for _, c := range m.controls {
 		c.SetFocus(false)
+		if c.Visible() {
+			visibles = append(visibles, c)
+		}
 	}
 	m.focusIndex++
-	if m.focusIndex > len(m.controls)-1 {
+	if m.focusIndex > len(visibles)-1 {
 		m.focusIndex = 0
 	}
 	m.controls[m.focusIndex].SetFocus(true)
@@ -208,10 +262,9 @@ func (m *mainFrame) startLoop(interval int) {
 		}
 	}()
 
-	//	m.pollStats(interval)
+	m.pollStats(interval)
 	m.refresh()
 
-mainloop:
 	for {
 		select {
 		case ev := <-evt:
@@ -222,13 +275,15 @@ mainloop:
 			switch ev.Type {
 			case termbox.EventKey:
 				switch ev.Key {
-				case termbox.KeyEsc:
-					break mainloop
-
 				case termbox.KeyTab:
-					m.rotateFocus()
+					m.navigateFocus()
 					m.refresh()
 
+				default:
+					if ev.Ch == 'q' {
+						return
+					}
+					m.execCommand(string(ev.Ch))
 				}
 			case termbox.EventError:
 				panic(ev.Err)
@@ -372,49 +427,50 @@ func (m *mainFrame) show(host string, port, pollInterval int) {
 		if len(m.controls) > 0 {
 			m.controls[m.focusIndex].SetFocus(true)
 		}
-
-		m.tubesStatsGrid.UpdateData([][]string{
-			[]string{"tube 1", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 2", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 3", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-			[]string{"tube 4", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-			[]string{"tube 5", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 6", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 7", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 8", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-			[]string{"tube 9", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-			[]string{"tube 10", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 11", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 12", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 13", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-			[]string{"tube 14", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-			[]string{"tube 15", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 16", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 17", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 18", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-			[]string{"tube 19", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-			[]string{"tube 20", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 21", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 22", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 23", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-			[]string{"tube 24", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-			[]string{"tube 25", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 26", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 27", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 28", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-			[]string{"tube 29", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-			[]string{"tube 30", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 31", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 32", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 33", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-			[]string{"tube 34", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-			[]string{"tube 35", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 36", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 37", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			[]string{"tube 38", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-			[]string{"tube 39", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-			[]string{"tube 40", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-		})
+		/*
+			m.tubesStatsGrid.UpdateData([][]string{
+				[]string{"tube 1", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 2", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 3", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+				[]string{"tube 4", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+				[]string{"tube 5", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 6", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 7", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 8", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+				[]string{"tube 9", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+				[]string{"tube 10", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 11", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 12", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 13", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+				[]string{"tube 14", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+				[]string{"tube 15", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 16", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 17", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 18", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+				[]string{"tube 19", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+				[]string{"tube 20", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 21", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 22", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 23", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+				[]string{"tube 24", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+				[]string{"tube 25", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 26", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 27", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 28", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+				[]string{"tube 29", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+				[]string{"tube 30", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 31", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 32", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 33", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+				[]string{"tube 34", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+				[]string{"tube 35", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 36", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 37", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+				[]string{"tube 38", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+				[]string{"tube 39", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+				[]string{"tube 40", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			})
+		*/
 	}
 
 	m.startLoop(pollInterval)
