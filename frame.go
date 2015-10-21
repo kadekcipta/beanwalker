@@ -10,8 +10,10 @@ import (
 )
 
 const (
-	titleLine  = "Beanstalkd Stats Monitor"
-	statusLine = "[TAB] Switch Focus  [ESC] Exit  [\u2190 \u2192 \u2191 \u2193] Scroll"
+	titleLine            = "Beanstalkd Stats Monitor"
+	connectionInfo       = "Host: %s:%d"
+	beanstalkVersionInfo = "Server version: %s"
+	statusLine           = "[TAB] Switch Focus  [ESC] Exit  [\u2190 \u2192 \u2191 \u2193] Scroll"
 
 	infoColor = termbox.ColorDefault
 )
@@ -25,6 +27,7 @@ type mainFrame struct {
 	systemStatsGrid *ScrollableGrid
 	controls        []Control
 	focusIndex      int
+	bsVersion       string
 }
 
 func (m *mainFrame) Clear(fg termbox.Attribute, bg termbox.Attribute) {
@@ -122,13 +125,14 @@ func (m *mainFrame) pollStats(interval int) {
 func (m *mainFrame) redraw() {
 	m.Clear(termbox.ColorDefault, termbox.ColorDefault)
 	w, h := termbox.Size()
-	m.systemStatsGrid.Resize(2, 3, w-4, 5)
-	m.tubesStatsGrid.Resize(2, 10, w-4, h-11)
+	m.systemStatsGrid.Resize(BufferRegion{1, 3, w - 3, 5})
+	m.tubesStatsGrid.Resize(BufferRegion{1, 10, w - 3, h - 11})
 
-	m.WriteText(2, 1, infoColor, termbox.ColorDefault, titleLine)
-	// write connected host info
-	m.WriteText(w-len(hostInfo)-3, 1, FGColor, BGColor, hostInfo)
-	m.WriteText(2, h-1, infoColor, termbox.ColorDefault, statusLine)
+	m.WriteText(1, 1, infoColor, termbox.ColorDefault, titleLine)
+	beanstalkInfo := fmt.Sprintf(beanstalkVersionInfo, m.bsVersion)
+	m.WriteText(w-len(hostInfo)-1, 1, FGColor, BGColor, hostInfo)
+	m.WriteText(w-len(beanstalkInfo)-1, 2, FGColor|termbox.AttrBold, BGColor, beanstalkInfo)
+	m.WriteText(1, h-1, termbox.ColorWhite, BGColor, statusLine)
 }
 
 func (m *mainFrame) refresh() {
@@ -142,6 +146,16 @@ func (m *mainFrame) connect(host string, port int) error {
 		return err
 	}
 	m.c = c
+	// get server version
+	stats, err := c.Stats()
+	if err != nil {
+		return err
+	}
+
+	version, ok := stats["version"]
+	if ok {
+		m.bsVersion = version
+	}
 
 	return nil
 }
@@ -178,14 +192,17 @@ func (m *mainFrame) startLoop(interval int) {
 	if err != nil {
 		panic(err)
 	}
-	defer termbox.Close()
+
+	defer func() {
+		termbox.Close()
+		m.disconnect()
+	}()
 
 	termbox.SetInputMode(termbox.InputEsc)
-
 	evt := make(chan termbox.Event)
-	defer close(evt)
 
 	go func() {
+		defer close(evt)
 		for {
 			evt <- termbox.PollEvent()
 		}
@@ -198,7 +215,6 @@ mainloop:
 	for {
 		select {
 		case ev := <-evt:
-
 			if m.dispatchEvent(ev) {
 				m.refresh()
 			}
@@ -234,7 +250,7 @@ func (m *mainFrame) show(host string, port, pollInterval int) {
 		os.Exit(-1)
 	}
 
-	hostInfo = fmt.Sprintf("Connected to %s:%d", host, port)
+	hostInfo = fmt.Sprintf(connectionInfo, host, port)
 
 	if m.controls == nil {
 		m.focusIndex = 0
@@ -242,8 +258,6 @@ func (m *mainFrame) show(host string, port, pollInterval int) {
 
 		// system stats
 		m.systemStatsGrid = &ScrollableGrid{
-			X:     1,
-			Y:     2,
 			Title: "[ System Stats ]",
 			BP:    m,
 			Columns: []GridColumn{
@@ -306,8 +320,6 @@ func (m *mainFrame) show(host string, port, pollInterval int) {
 		m.controls = append(m.controls, m.systemStatsGrid)
 
 		m.tubesStatsGrid = &ScrollableGrid{
-			X:         1,
-			Y:         2,
 			VScroller: true,
 			Title:     "[ Tubes Stats ]",
 			BP:        m,
@@ -383,25 +395,25 @@ func (m *mainFrame) show(host string, port, pollInterval int) {
 			[]string{"tube 19", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
 			[]string{"tube 20", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
 			[]string{"tube 21", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			//			[]string{"tube 22", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			//			[]string{"tube 23", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-			//			[]string{"tube 24", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-			//			[]string{"tube 25", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			//			[]string{"tube 26", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			//			[]string{"tube 27", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			//			[]string{"tube 28", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-			//			[]string{"tube 29", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-			//			[]string{"tube 30", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			//			[]string{"tube 31", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			//			[]string{"tube 32", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			//			[]string{"tube 33", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-			//			[]string{"tube 34", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-			//			[]string{"tube 35", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			//			[]string{"tube 36", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			//			[]string{"tube 37", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
-			//			[]string{"tube 38", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
-			//			[]string{"tube 39", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
-			//			[]string{"tube 40", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 22", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 23", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+			[]string{"tube 24", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+			[]string{"tube 25", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 26", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 27", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 28", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+			[]string{"tube 29", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+			[]string{"tube 30", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 31", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 32", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 33", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+			[]string{"tube 34", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+			[]string{"tube 35", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 36", "120", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 37", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
+			[]string{"tube 38", "0", "230", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "330"},
+			[]string{"tube 39", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "111", "0"},
+			[]string{"tube 40", "0", "0", "1", "0", "1", "1", "0", "0", "1", "0", "1", "1", "0"},
 		})
 	}
 

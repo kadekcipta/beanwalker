@@ -7,14 +7,22 @@ import (
 const (
 	BGColor          = termbox.ColorDefault
 	FGColor          = termbox.ColorDefault
-	BGSelectionColor = termbox.ColorDefault
-	FGSelectionColor = termbox.ColorBlue | termbox.AttrReverse
+	BGSelectionColor = termbox.ColorGreen
+	FGSelectionColor = termbox.ColorWhite | termbox.AttrBold
 )
+
+type BufferRegion struct {
+	X, Y, W, H int
+}
+
+func (b BufferRegion) Valid() bool {
+	return b.H > 0 && b.W > 0
+}
 
 type Control interface {
 	HandleEvent(ev termbox.Event) bool
 	Redraw()
-	Resize(x, y, w, h int)
+	Resize(BufferRegion)
 	SetFocus(v bool)
 	Focused() bool
 	SetVisible(b bool)

@@ -30,5 +30,6 @@ func main() {
 		pollInterval = 1
 	}
 
-	(&mainFrame{}).show(bsHost, bsPort, pollInterval)
+	mainFrame := &mainFrame{}
+	mainFrame.show(bsHost, bsPort, pollInterval)
 }
