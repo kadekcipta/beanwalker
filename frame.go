@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/kr/beanstalk"
@@ -15,7 +16,7 @@ type controlCmd struct {
 	shortcut    string
 	description string
 	global      bool
-	action      func()
+	action      func() error
 }
 
 const (
@@ -27,6 +28,15 @@ const (
 )
 
 var hostInfo string
+
+func toInt(s string) int {
+	i, err := strconv.Atoi(s)
+	if err != nil {
+		panic(err)
+	}
+
+	return i
+}
 
 type mainFrame struct {
 	c              *beanstalk.Conn
@@ -68,14 +78,45 @@ func (m *mainFrame) debug(s string) {
 	}()
 }
 
-func (m *mainFrame) quit() { close(m.done) }
+func (m *mainFrame) quit() error {
+	close(m.done)
+	return nil
+}
 
-func (m *mainFrame) pauseTube() { m.debug("Not implemented yet") }
-
-func (m *mainFrame) doClearJobs(tubeName string) {
+func (m *mainFrame) kickJobs() error {
 	c, err := m.createConnection()
 	if err != nil {
-		return
+		return err
+	}
+	defer c.Close()
+
+	tubeName := m.currentTubeName()
+	if tubeName != "" {
+		t := &beanstalk.Tube{c, tubeName}
+		stats, err := t.Stats()
+		if err != nil {
+			return err
+		}
+		n := toInt(stats["current-jobs-buried"])
+		kicked, err := t.Kick(n)
+		if err != nil {
+			return err
+		}
+		m.debug(fmt.Sprintf("%d jobs kicked", kicked))
+	}
+
+	return nil
+}
+
+func (m *mainFrame) buryJobs() error {
+	m.debug("Not implemented yet")
+	return nil
+}
+
+func (m *mainFrame) doClearJobs(tubeName string) error {
+	c, err := m.createConnection()
+	if err != nil {
+		return err
 	}
 	defer c.Close()
 	t := &beanstalk.Tube{c, tubeName}
@@ -83,45 +124,53 @@ func (m *mainFrame) doClearJobs(tubeName string) {
 	for {
 		id, _, err := t.PeekReady()
 		if err != nil {
-			return
+			return err
 		}
 		if err := c.Delete(id); err != nil {
-			return
+			return err
 		}
 	}
 	// wipe out buried jobs
 	for {
 		id, _, err := t.PeekBuried()
 		if err != nil {
-			return
+			return err
 		}
 		if err := c.Delete(id); err != nil {
-			return
+			return err
 		}
 	}
 	// wipe out delayed jobs
 	for {
 		id, _, err := t.PeekDelayed()
 		if err != nil {
-			return
+			return err
 		}
 		if err := c.Delete(id); err != nil {
-			return
+			return err
 		}
 	}
+
+	return nil
 }
 
-func (m *mainFrame) clearJobs() {
+func (m *mainFrame) currentTubeName() string {
 	if m.tubesStatsGrid.Focused() {
 		row := m.tubesStatsGrid.CurrentRow()
 		if row != nil {
-			tubeName := row[0]
-			go m.doClearJobs(tubeName)
+			return row[0]
 		}
 	}
+	return ""
 }
 
-func (m *mainFrame) deleteTube() { m.debug("Not implemented yet") }
+func (m *mainFrame) clearJobs() error {
+	tubeName := m.currentTubeName()
+	if tubeName != "" {
+		return m.doClearJobs(tubeName)
+	}
+	return nil
+}
 
 func (m *mainFrame) execCommand(key termbox.Key) {
 	for _, c := range m.commands {
@@ -129,26 +178,37 @@ func (m *mainFrame) execCommand(key termbox.Key) {
 			if !c.global && !m.tubesStatsGrid.Focused() {
 				continue
 			}
-			c.action()
+			if err := c.action(); err != nil {
+				m.debug(err.Error())
+			}
 		}
 	}
 }
 
 func (m *mainFrame) initCommands(x, y int) {
 	m.commands = []controlCmd{
-		{termbox.KeyCtrlQ, "CTRL+q", "Quit", true, m.quit},
-		{termbox.KeyCtrlP, "CTRL+p", "Pause", false, m.pauseTube},
-		{termbox.KeyCtrlC, "CTRL+c", "Clear Jobs", false, m.clearJobs},
-		{termbox.KeyCtrlD, "CTRL+d", "Delete", false, m.deleteTube},
+		{termbox.KeyCtrlQ, "^q", "Quit", true, m.quit},
+		{termbox.KeyCtrlB, "^b", "Bury", false, m.buryJobs},
+		{termbox.KeyCtrlC, "^c", "Clear", false, m.clearJobs},
+		{termbox.KeyCtrlK, "^k", "Kick", false, m.kickJobs},
 		{termbox.KeyTab, "TAB", "Navigate", true, m.navigateFocus},
 		{termbox.Key(0), "\u2190 \u2192 \u2191 \u2193", "Scroll", true, nil},
 	}
 
-	dx := x
+	longest := 0
 	for _, c := range m.commands {
-		m.WriteText(dx, y, termbox.ColorRed, BGColor, c.shortcut)
+		l := runewidth.StringWidth(c.shortcut+c.description) + 1
+		if l > longest {
+			longest = l
+		}
+	}
+
+	dx := x
+	dy := y
+	for _, c := range m.commands {
+		m.WriteText(dx, dy, termbox.ColorRed, BGColor, c.shortcut)
 		dx += runewidth.StringWidth(c.shortcut) + 1
-		m.WriteText(dx, y, FGColor, BGColor, c.description)
+		m.WriteText(dx, dy, FGColor, BGColor, c.description)
 		dx += runewidth.StringWidth(c.description) + 2
 	}
 }
@@ -231,7 +291,7 @@ func (m *mainFrame) pollStats(interval int) {
 }
 
 func (m *mainFrame) redraw() {
-	m.Clear(termbox.ColorDefault, termbox.ColorDefault)
+	m.Clear(termbox.ColorDefault, BGColor)
 	w, h := termbox.Size()
 	m.sysStatsGrid.Resize(BufferRegion{1, 2, w - 3, 5})
 	m.tubesStatsGrid.Resize(BufferRegion{1, 8, w - 3, h - 10})
@@ -294,7 +354,7 @@ func (m *mainFrame) dispatchEvent(ev termbox.Event) bool {
 	return false
 }
 
-func (m *mainFrame) navigateFocus() {
+func (m *mainFrame) navigateFocus() error {
 	// list of visible controls
 	visibles := []Control{}
 	for _, c := range m.controls {
@@ -309,6 +369,8 @@ func (m *mainFrame) navigateFocus() {
 	}
 	m.controls[m.focusIndex].SetFocus(true)
 	m.refresh()
+
+	return nil
 }
 
 func (m *mainFrame) startLoop(interval int) {

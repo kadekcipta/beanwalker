@@ -133,31 +133,31 @@ func (s *ScrollableGrid) drawBorder() {
 	}
 
 	// top left
-	s.BP.SetCell(s.bounds.X, s.bounds.Y, '\u2554', fg, bg)
+	s.BP.SetCell(s.bounds.X, s.bounds.Y, '\u250c', fg, bg)
 	// top right
-	s.BP.SetCell(s.bounds.X+s.bounds.W, s.bounds.Y, '\u2557', fg, bg)
+	s.BP.SetCell(s.bounds.X+s.bounds.W, s.bounds.Y, '\u2510', fg, bg)
 	for i := 1; i < s.bounds.W; i++ {
 		// top line
-		s.BP.SetCell(s.bounds.X+i, s.bounds.Y, '\u2550', fg, bg)
+		s.BP.SetCell(s.bounds.X+i, s.bounds.Y, '\u2500', fg, bg)
 		// heading bottom
-		s.BP.SetCell(s.bounds.X+i, s.bounds.Y+columnsOffset+1, '\u2550', fg, bg)
+		s.BP.SetCell(s.bounds.X+i, s.bounds.Y+columnsOffset+1, '\u2500', fg, bg)
 		// bottom line
-		s.BP.SetCell(s.bounds.X+i, s.bounds.Y+s.bounds.H-1, '\u2550', fg, bg)
+		s.BP.SetCell(s.bounds.X+i, s.bounds.Y+s.bounds.H-1, '\u2500', fg, bg)
 	}
 	for y := 1; y < s.bounds.H-1; y++ {
 		// left line
-		s.BP.SetCell(s.bounds.X, s.bounds.Y+y, '\u2551', fg, bg)
+		s.BP.SetCell(s.bounds.X, s.bounds.Y+y, '\u2502', fg, bg)
 		// right line
-		s.BP.SetCell(s.bounds.X+s.bounds.W, s.bounds.Y+y, '\u2551', fg, bg)
+		s.BP.SetCell(s.bounds.X+s.bounds.W, s.bounds.Y+y, '\u2502', fg, bg)
 	}
 	// left heading junction
-	s.BP.SetCell(s.bounds.X, s.bounds.Y+columnsOffset+1, '\u2560', fg, bg)
+	s.BP.SetCell(s.bounds.X, s.bounds.Y+columnsOffset+1, '\u251c', fg, bg)
 	// right heading junction
-	s.BP.SetCell(s.bounds.X+s.bounds.W, s.bounds.Y+columnsOffset+1, '\u2563', fg, bg)
+	s.BP.SetCell(s.bounds.X+s.bounds.W, s.bounds.Y+columnsOffset+1, '\u2524', fg, bg)
 	// bottom left
-	s.BP.SetCell(s.bounds.X, s.bounds.Y+s.bounds.H-1, '\u255a', fg, bg)
+	s.BP.SetCell(s.bounds.X, s.bounds.Y+s.bounds.H-1, '\u2514', fg, bg)
 	// bottom right
-	s.BP.SetCell(s.bounds.X+s.bounds.W, s.bounds.Y+s.bounds.H-1, '\u255d', fg, bg)
+	s.BP.SetCell(s.bounds.X+s.bounds.W, s.bounds.Y+s.bounds.H-1, '\u2518', fg, bg)
 }
 
 func (s *ScrollableGrid) drawHints() {
