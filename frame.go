@@ -270,6 +270,7 @@ func (m *mainFrame) startLoop(interval int) {
 		case ev := <-evt:
 			if m.dispatchEvent(ev) {
 				m.refresh()
+				continue
 			}
 
 			switch ev.Type {

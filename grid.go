@@ -275,29 +275,24 @@ func (s *ScrollableGrid) HandleEvent(ev termbox.Event) bool {
 
 	switch ev.Type {
 	case termbox.EventKey:
-		if s.Focused() {
-			switch ev.Key {
-			case termbox.KeyArrowLeft:
-				s.scrollLeft()
-				return true
+		switch ev.Key {
+		case termbox.KeyArrowLeft:
+			s.scrollLeft()
+			return true
 
-			case termbox.KeyArrowRight:
-				s.scrollRight()
-				return true
+		case termbox.KeyArrowRight:
+			s.scrollRight()
+			return true
 
-			case termbox.KeyArrowUp:
-				s.scrollUp()
-				return true
+		case termbox.KeyArrowUp:
+			s.scrollUp()
+			return true
 
-			case termbox.KeyArrowDown:
-				s.scrollDown()
-				return true
+		case termbox.KeyArrowDown:
+			s.scrollDown()
+			return true
 
-			}
 		}
-	case termbox.EventResize:
-		s.Redraw()
-		return true
 	}
 
 	return false
