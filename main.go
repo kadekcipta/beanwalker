@@ -19,7 +19,7 @@ func main() {
 
 	flag.StringVar(&bsHost, "h", "127.0.0.1", "beanstalkd host")
 	flag.IntVar(&bsPort, "p", 11300, "beanstalkd port")
-	flag.IntVar(&pollInterval, "i", 1, "refresh interval in seconds and must be greater than 1 second")
+	flag.IntVar(&pollInterval, "i", 2, "refresh interval in seconds and must be greater than 2 seconds")
 	flag.Parse()
 	if strings.TrimSpace(bsHost) == "" {
 		flag.PrintDefaults()
@@ -27,7 +27,7 @@ func main() {
 	}
 
 	if pollInterval < 1 {
-		pollInterval = 1
+		pollInterval = 2
 	}
 
 	mainFrame := &mainFrame{}

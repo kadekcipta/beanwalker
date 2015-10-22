@@ -22,14 +22,14 @@ type controlCmd struct {
 const (
 	titleLine            = "Beanstalkd Stats Monitor"
 	connectionInfo       = "%s:%d"
-	beanstalkVersionInfo = "v%s"
+	beanstalkVersionInfo = "(v%s)"
 
 	infoColor = termbox.ColorDefault
 )
 
 var hostInfo string
 
-func toInt(s string) int {
+func strToInt(s string) int {
 	i, err := strconv.Atoi(s)
 	if err != nil {
 		panic(err)
@@ -68,14 +68,9 @@ func (m *mainFrame) WriteText(x, y int, fg, bg termbox.Attribute, s string) {
 	}
 }
 
-func (m *mainFrame) debug(s string) {
-	m.debugText = s
+func (m *mainFrame) showStatus(s string) {
+	m.debugText = time.Now().Format(time.RFC3339) + " > " + s
 	m.refresh()
-	go func() {
-		<-time.After(5 * time.Second)
-		m.debugText = ""
-		m.refresh()
-	}()
 }
 
 func (m *mainFrame) quit() error {
@@ -97,61 +92,51 @@ func (m *mainFrame) kickJobs() error {
 		if err != nil {
 			return err
 		}
-		n := toInt(stats["current-jobs-buried"])
+		n := strToInt(stats["current-jobs-buried"])
 		kicked, err := t.Kick(n)
 		if err != nil {
 			return err
 		}
-		m.debug(fmt.Sprintf("%d jobs kicked", kicked))
+		m.showStatus(fmt.Sprintf("%d jobs kicked", kicked))
 	}
 
 	return nil
 }
 
 func (m *mainFrame) buryJobs() error {
-	m.debug("Not implemented yet")
+	m.showStatus("Not implemented yet")
 	return nil
 }
 
-func (m *mainFrame) doClearJobs(tubeName string) error {
-	c, err := m.createConnection()
-	if err != nil {
-		return err
-	}
-	defer c.Close()
+// deleteJobs deletes the jobs with specified state
+func (m *mainFrame) deleteJobs(c *beanstalk.Conn, tubeName, state string) (int, error) {
+	var id uint64
+	var err error
+
 	t := &beanstalk.Tube{c, tubeName}
-	// wipe out ready jobs
+	n := 0
+
 	for {
-		id, _, err := t.PeekReady()
+		switch state {
+		case "ready":
+			id, _, err = t.PeekReady()
+		case "buried":
+			id, _, err = t.PeekBuried()
+		case "delayed":
+			id, _, err = t.PeekDelayed()
+		}
+
 		if err != nil {
-			return err
+			return n, err
 		}
+
 		if err := c.Delete(id); err != nil {
-			return err
+			return n, err
 		}
-	}
-	// wipe out buried jobs
-	for {
-		id, _, err := t.PeekBuried()
-		if err != nil {
-			return err
-		}
-		if err := c.Delete(id); err != nil {
-			return err
-		}
-	}
-	// wipe out delayed jobs
-	for {
-		id, _, err := t.PeekDelayed()
-		if err != nil {
-			return err
-		}
-		if err := c.Delete(id); err != nil {
-			return err
-		}
+		n++
 	}
 
-	return nil
+	return n, nil
 }
 
 func (m *mainFrame) currentTubeName() string {
@@ -164,12 +149,40 @@ func (m *mainFrame) currentTubeName() string {
 	return ""
 }
 
-func (m *mainFrame) clearJobs() error {
-	tubeName := m.currentTubeName()
-	if tubeName != "" {
-		return m.doClearJobs(tubeName)
+func (m *mainFrame) deleteReadyJobs() error {
+	c, err := m.createConnection()
+	if err != nil {
+		return err
 	}
-	return nil
+	defer c.Close()
+
+	n, err := m.deleteJobs(c, m.currentTubeName(), "ready")
+	m.showStatus(fmt.Sprintf("%d ready jobs deleted", n))
+	return err
+}
+
+func (m *mainFrame) deleteBuriedJobs() error {
+	c, err := m.createConnection()
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	n, err := m.deleteJobs(c, m.currentTubeName(), "buried")
+	m.showStatus(fmt.Sprintf("%d buried jobs deleted", n))
+	return err
+}
+
+func (m *mainFrame) deleteDelayedJobs() error {
+	c, err := m.createConnection()
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	n, err := m.deleteJobs(c, m.currentTubeName(), "delayed")
+	m.showStatus(fmt.Sprintf("%d delayed jobs deleted", n))
+	return err
 }
 
 func (m *mainFrame) execCommand(key termbox.Key) {
@@ -178,21 +191,21 @@ func (m *mainFrame) execCommand(key termbox.Key) {
 			if !c.global && !m.tubesStatsGrid.Focused() {
 				continue
 			}
-			if err := c.action(); err != nil {
-				m.debug(err.Error())
-			}
+			c.action()
 		}
 	}
 }
 
 func (m *mainFrame) initCommands(x, y int) {
 	m.commands = []controlCmd{
-		{termbox.KeyCtrlQ, "^q", "Quit", true, m.quit},
-		{termbox.KeyCtrlB, "^b", "Bury", false, m.buryJobs},
-		{termbox.KeyCtrlC, "^c", "Clear", false, m.clearJobs},
-		{termbox.KeyCtrlK, "^k", "Kick", false, m.kickJobs},
+		{termbox.KeyCtrlQ, " ^q", "Quit", true, m.quit},
+		{termbox.KeyF3, " F3", "Bury", false, m.buryJobs},
+		{termbox.KeyF4, " F4", "Kick", false, m.kickJobs},
 		{termbox.KeyTab, "TAB", "Navigate", true, m.navigateFocus},
-		{termbox.Key(0), "\u2190 \u2192 \u2191 \u2193", "Scroll", true, nil},
+		{termbox.Key(0), "\u2194 \u2195", "Scroll", true, nil},
+		{termbox.KeyF5, " F5", "Del-Ready", false, m.deleteReadyJobs},
+		{termbox.KeyF6, " F6", "Del-Buried", false, m.deleteBuriedJobs},
+		{termbox.KeyF7, " F7", "Del-Delayed", false, m.deleteDelayedJobs},
 	}
 
 	longest := 0
@@ -205,11 +218,16 @@ func (m *mainFrame) initCommands(x, y int) {
 
 	dx := x
 	dy := y
-	for _, c := range m.commands {
+	for i, c := range m.commands {
 		m.WriteText(dx, dy, termbox.ColorRed, BGColor, c.shortcut)
 		dx += runewidth.StringWidth(c.shortcut) + 1
 		m.WriteText(dx, dy, FGColor, BGColor, c.description)
-		dx += runewidth.StringWidth(c.description) + 2
+		dx += longest - 2
+
+		if i == 3 {
+			dy++
+			dx = x
+		}
 	}
 }
 
@@ -294,15 +312,13 @@ func (m *mainFrame) redraw() {
 	m.Clear(termbox.ColorDefault, BGColor)
 	w, h := termbox.Size()
 	m.sysStatsGrid.Resize(BufferRegion{1, 2, w - 3, 5})
-	m.tubesStatsGrid.Resize(BufferRegion{1, 8, w - 3, h - 10})
+	m.tubesStatsGrid.Resize(BufferRegion{1, 8, w - 3, h - 12})
 
 	m.WriteText(1, 1, infoColor, termbox.ColorDefault, titleLine)
-	beanstalkInfo := fmt.Sprintf(beanstalkVersionInfo, m.bsVersion)
-	m.WriteText(w-runewidth.StringWidth(hostInfo)-1, 0, FGColor, BGColor, hostInfo)
-	m.WriteText(w-runewidth.StringWidth(beanstalkInfo)-1, 1, FGColor|termbox.AttrBold, BGColor, beanstalkInfo)
-	m.initCommands(2, h-2)
-	cx := (w - runewidth.StringWidth(m.debugText)) / 2
-	m.WriteText(cx, h-1, termbox.ColorYellow, BGColor, m.debugText)
+	beanstalkInfo := hostInfo + " " + fmt.Sprintf(beanstalkVersionInfo, m.bsVersion)
+	m.WriteText(w-runewidth.StringWidth(beanstalkInfo)-1, 1, termbox.ColorRed|termbox.AttrBold, BGColor, beanstalkInfo)
+	m.initCommands(2, h-4)
+	m.WriteText(1, h-1, termbox.ColorYellow, BGColor, m.debugText)
 }
 
 func (m *mainFrame) refresh() {
@@ -410,9 +426,7 @@ func (m *mainFrame) startLoop(interval int) {
 
 			switch ev.Type {
 			case termbox.EventKey:
-				if ev.Key >= termbox.KeyCtrlA && ev.Key <= termbox.KeyCtrlZ {
-					m.execCommand(ev.Key)
-				}
+				m.execCommand(ev.Key)
 
 			case termbox.EventError:
 				panic(ev.Err)
@@ -450,8 +464,8 @@ func (m *mainFrame) show(host string, port, pollInterval int) {
 			Columns: []GridColumn{
 				{"hostname", AlignLeft, 20},
 				{"current-jobs-urgent", AlignRight, 20},
-				{"current-jobs-ready", AlignRight, 21},
-				{"current-jobs-reserved", AlignRight, 23},
+				{"current-jobs-ready", AlignRight, 23},
+				{"current-jobs-reserved", AlignRight, 25},
 				{"current-jobs-delayed", AlignRight, 21},
 				{"current-jobs-buried", AlignRight, 21},
 				{"cmd-put", AlignRight, 9},
@@ -511,7 +525,7 @@ func (m *mainFrame) show(host string, port, pollInterval int) {
 				{"name", AlignLeft, 20},
 				{"current-jobs-urgent", AlignRight, 21},
 				{"current-jobs-ready", AlignRight, 21},
-				{"current-jobs-reserved", AlignRight, 21},
+				{"current-jobs-reserved", AlignRight, 25},
 				{"current-jobs-delayed", AlignRight, 21},
 				{"current-jobs-buried", AlignRight, 21},
 				{"total-jobs", AlignRight, 12},
