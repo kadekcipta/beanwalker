@@ -7,8 +7,8 @@ import (
 const (
 	BGColor          = termbox.ColorDefault
 	FGColor          = termbox.ColorDefault
-	BGSelectionColor = termbox.ColorGreen
-	FGSelectionColor = termbox.ColorWhite | termbox.AttrBold
+	BGSelectionColor = termbox.ColorRed
+	FGSelectionColor = termbox.ColorWhite
 )
 
 type BufferRegion struct {

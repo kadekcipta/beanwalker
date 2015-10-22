@@ -71,6 +71,16 @@ type ScrollableGrid struct {
 	sync.RWMutex
 }
 
+func (s *ScrollableGrid) CurrentRow() []string {
+	s.RLock()
+	defer s.RUnlock()
+
+	if s.dataIndex >= 0 && s.dataIndex < len(s.data) {
+		return (s.data[s.dataIndex])[:]
+	}
+	return nil
+}
+
 func (s *ScrollableGrid) SetCustomDrawFunc(f CustomDrawFunc) {
 	s.customDrawFunc = f
 }
@@ -110,7 +120,6 @@ func (s *ScrollableGrid) drawRow(cellY int, row []string, fg, bg termbox.Attribu
 			} else {
 				s.BP.WriteText(dx, cellY, fg, bg, item)
 			}
-
 			dx += tw
 		}
 	}
@@ -176,7 +185,6 @@ func (s *ScrollableGrid) drawHeading() {
 	highlightBGColor := FGColor | termbox.AttrReverse
 	if !s.Focused() {
 		highlightBGColor = BGColor
-		highlightFGColor |= termbox.AttrBold
 	}
 	s.clearRow(s.bounds.Y+columnsOffset, highlightBGColor)
 	s.drawRow(s.bounds.Y+columnsOffset, headers, highlightFGColor, highlightBGColor, false, true)
@@ -187,7 +195,6 @@ func (s *ScrollableGrid) drawData() {
 	if dataLen == 0 {
 		return
 	}
-
 	// start of data index
 	startDataIndex := s.vScrollPos
 	i := 0
@@ -231,7 +238,6 @@ func (s *ScrollableGrid) availableRowsSpace() int {
 
 func (s *ScrollableGrid) adjustScrollPos() {
 	dataLen := len(s.data)
-
 	if dataLen == 0 {
 		s.dataIndex = -1
 		s.vScrollPos = 0
@@ -291,7 +297,6 @@ func (s *ScrollableGrid) HandleEvent(ev termbox.Event) bool {
 		case termbox.KeyArrowDown:
 			s.scrollDown()
 			return true
-
 		}
 	}
 
