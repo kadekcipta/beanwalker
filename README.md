@@ -1,7 +1,7 @@
-beanmonitor
-===========
+beanwalker
+==========
 
-Simple beanstalkd monitoring and controlling tool 
+Simple beanstalkd stats monitor and control 
 
 ### Features
 - Cross platform console based user interface
@@ -11,13 +11,13 @@ Simple beanstalkd monitoring and controlling tool
 ### Installation
 
 ```sh
-$ go get -u github.com/kadekcipta/beanmonitor/...
+$ go get -u github.com/kadekcipta/beanwalker/...
 ```
 
 ### Usage
 
 ```sh
-$ beanmonitor -h localhost -i 5
+$ beanwalker -h localhost -i 5
 ```
 
 ### Notes
