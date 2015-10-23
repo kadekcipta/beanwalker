@@ -20,7 +20,7 @@ type controlCmd struct {
 }
 
 const (
-	titleLine            = "Beanwalker - a simple beanstalkd stats & control"
+	titleLine            = "Beanwalker - A simple beanstalkd status monitor and control "
 	connectionInfo       = "%s:%d"
 	beanstalkVersionInfo = "(beanstalkd v%s)"
 	deletionMessage      = "%s: %d %s jobs %s"

@@ -21,6 +21,9 @@ $ go get -u github.com/kadekcipta/beanwalker/...
 $ beanwalker -h localhost -i 5
 ```
 
+### Screenshot
+![Screenshot](/screenshots/latest.png)
+
 ### Notes
 
 Early development stage
