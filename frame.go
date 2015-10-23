@@ -23,7 +23,7 @@ const (
 	titleLine            = "Beanwalker - a simple beanstalkd stats & control"
 	connectionInfo       = "%s:%d"
 	beanstalkVersionInfo = "(beanstalkd v%s)"
-	deletionMessage      = "%s: %d %s %s"
+	deletionMessage      = "%s: %d %s jobs %s"
 
 	infoColor = termbox.ColorDefault
 )
@@ -80,15 +80,9 @@ func (m *mainFrame) quit() error {
 }
 
 func (m *mainFrame) kickJobs() error {
-	c, err := m.createConnection()
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-
 	tubeName := m.currentTubeName()
 	if tubeName != "" {
-		t := &beanstalk.Tube{c, tubeName}
+		t := &beanstalk.Tube{m.c, tubeName}
 		stats, err := t.Stats()
 		if err != nil {
 			return err
@@ -105,8 +99,31 @@ func (m *mainFrame) kickJobs() error {
 }
 
 func (m *mainFrame) buryJobs() error {
-	m.showStatus("Not implemented yet")
-	return nil
+	tubeSet := beanstalk.NewTubeSet(m.c, m.currentTubeName())
+	n := 0
+	var lastError error
+
+	for {
+		id, _, err := tubeSet.Reserve(time.Second)
+		if err != nil {
+			lastError = lastError
+			break
+		}
+		stats, err := m.c.StatsJob(id)
+		if err != nil {
+			lastError = err
+			break
+		}
+		pri := strToInt(stats["pri"])
+		if err := m.c.Bury(id, uint32(pri)); err != nil {
+			lastError = err
+			break
+		}
+		n++
+	}
+	m.showStatus(fmt.Sprintf("%s: %d jobs buried", m.currentTubeName(), n))
+
+	return lastError
 }
 
 // deleteJobs deletes the jobs with specified state
@@ -151,37 +168,19 @@ func (m *mainFrame) currentTubeName() string {
 }
 
 func (m *mainFrame) deleteReadyJobs() error {
-	c, err := m.createConnection()
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-
-	n, err := m.deleteJobs(c, m.currentTubeName(), "ready")
+	n, err := m.deleteJobs(m.c, m.currentTubeName(), "ready")
 	m.showStatus(fmt.Sprintf(deletionMessage, m.currentTubeName(), n, "ready", "deleted"))
 	return err
 }
 
 func (m *mainFrame) deleteBuriedJobs() error {
-	c, err := m.createConnection()
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-
-	n, err := m.deleteJobs(c, m.currentTubeName(), "buried")
+	n, err := m.deleteJobs(m.c, m.currentTubeName(), "buried")
 	m.showStatus(fmt.Sprintf(deletionMessage, m.currentTubeName(), n, "buried", "deleted"))
 	return err
 }
 
 func (m *mainFrame) deleteDelayedJobs() error {
-	c, err := m.createConnection()
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-
-	n, err := m.deleteJobs(c, m.currentTubeName(), "delayed")
+	n, err := m.deleteJobs(m.c, m.currentTubeName(), "delayed")
 	m.showStatus(fmt.Sprintf(deletionMessage, m.currentTubeName(), n, "delayed", "deleted"))
 	return err
 }

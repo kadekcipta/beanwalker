@@ -1,12 +1,13 @@
 beanwalker
 ==========
 
-Simple beanstalkd stats monitor and control 
+Simple beanstalkd status monitor and control 
 
 ### Features
-- Cross platform console based user interface
+- Interacgice cross platform console based user interface
 - Vertical and horizontal scrollable
-- Clear all jobs on selected tube
+- Delete jobs with ready, buried and delayed states on selected tube
+- Kick and bury jobs on selected tube
 
 ### Installation
 
