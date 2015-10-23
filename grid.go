@@ -15,7 +15,9 @@ type TextAlign int
 const (
 	AlignLeft TextAlign = iota
 	AlignRight
+)
 
+const (
 	titleOffset   = 0
 	columnsOffset = 1
 	vHintsOffset  = 2
@@ -53,11 +55,10 @@ func (c *GridColumn) Format(s string, vars ...bool) string {
 // ScrollableGrid represents the interface to arrange string data in tabular format
 // Vertical and horizontal scrolling are provided by arrows keys
 type ScrollableGrid struct {
-	Columns   []GridColumn
-	VScroller bool
-	Title     string
-	BP        BufferProxy
-
+	Columns        []GridColumn
+	VScroller      bool
+	Title          string
+	BP             BufferProxy
 	visible        bool
 	focused        bool
 	dataStartY     int

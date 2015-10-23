@@ -20,9 +20,10 @@ type controlCmd struct {
 }
 
 const (
-	titleLine            = "Beanstalkd Stats Monitor"
+	titleLine            = "Beanwalker - a simple beanstalkd stats & control"
 	connectionInfo       = "%s:%d"
-	beanstalkVersionInfo = "(v%s)"
+	beanstalkVersionInfo = "(beanstalkd v%s)"
+	deletionMessage      = "%s: %d %s %s"
 
 	infoColor = termbox.ColorDefault
 )
@@ -69,7 +70,7 @@ func (m *mainFrame) WriteText(x, y int, fg, bg termbox.Attribute, s string) {
 }
 
 func (m *mainFrame) showStatus(s string) {
-	m.debugText = time.Now().Format(time.RFC3339) + " > " + s
+	m.debugText = s
 	m.refresh()
 }
 
@@ -97,7 +98,7 @@ func (m *mainFrame) kickJobs() error {
 		if err != nil {
 			return err
 		}
-		m.showStatus(fmt.Sprintf("%d jobs kicked", kicked))
+		m.showStatus(fmt.Sprintf(deletionMessage, m.currentTubeName(), kicked, "on hold", "kicked"))
 	}
 
 	return nil
@@ -157,7 +158,7 @@ func (m *mainFrame) deleteReadyJobs() error {
 	defer c.Close()
 
 	n, err := m.deleteJobs(c, m.currentTubeName(), "ready")
-	m.showStatus(fmt.Sprintf("%d ready jobs deleted", n))
+	m.showStatus(fmt.Sprintf(deletionMessage, m.currentTubeName(), n, "ready", "deleted"))
 	return err
 }
 
@@ -169,7 +170,7 @@ func (m *mainFrame) deleteBuriedJobs() error {
 	defer c.Close()
 
 	n, err := m.deleteJobs(c, m.currentTubeName(), "buried")
-	m.showStatus(fmt.Sprintf("%d buried jobs deleted", n))
+	m.showStatus(fmt.Sprintf(deletionMessage, m.currentTubeName(), n, "buried", "deleted"))
 	return err
 }
 
@@ -181,7 +182,7 @@ func (m *mainFrame) deleteDelayedJobs() error {
 	defer c.Close()
 
 	n, err := m.deleteJobs(c, m.currentTubeName(), "delayed")
-	m.showStatus(fmt.Sprintf("%d delayed jobs deleted", n))
+	m.showStatus(fmt.Sprintf(deletionMessage, m.currentTubeName(), n, "delayed", "deleted"))
 	return err
 }
 
@@ -239,7 +240,6 @@ func (m *mainFrame) getSystemStats() [][]string {
 	}
 
 	data := [][]string{}
-
 	row := []string{}
 	// get headers as reference
 	for _, col := range m.sysStatsGrid.Columns {
