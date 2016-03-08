@@ -46,10 +46,17 @@ func (c *GridColumn) Format(s string, vars ...bool) string {
 	}
 	format = "%" + format
 
+	ret := ""
+
 	if titleFormat {
-		return strings.Title(fmt.Sprintf(format, s))
+		ret = strings.Title(fmt.Sprintf(format, s))
 	}
-	return fmt.Sprintf(format, s)
+	ret = fmt.Sprintf(format, s)
+	if len(ret) > c.Width {
+		ret = ret[0:c.Width-3] + "..."
+	}
+
+	return ret
 }
 
 // ScrollableGrid represents the interface to arrange string data in tabular format
@@ -173,6 +180,17 @@ func (s *ScrollableGrid) drawHints() {
 		cx := (s.bounds.X + s.bounds.W) / 2
 		s.BP.WriteText(cx, s.dataBounds.Y-1, FGColor|termbox.AttrBold, BGColor, " \u2191 ")
 		s.BP.WriteText(cx, s.dataBounds.Y+s.dataBounds.H, FGColor|termbox.AttrBold, BGColor, " \u2193 ")
+
+		overlayHint := false
+		row := s.CurrentRow()
+		// first data cell is special
+		if row != nil && len(row) > 0 {
+			firstData := row[0]
+			overlayHint = len(firstData) > s.Columns[0].Width
+		}
+		if overlayHint {
+			s.BP.WriteText(s.bounds.X+1, s.dataBounds.Y+s.dataBounds.H, FGColor, termbox.AttrReverse, s.CurrentRow()[0])
+		}
 	}
 }
 

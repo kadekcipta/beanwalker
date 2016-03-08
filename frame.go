@@ -521,7 +521,7 @@ func (m *mainFrame) show(host string, port, pollInterval int) {
 			Title:     "[ Tubes Stats ]",
 			BP:        m,
 			Columns: []GridColumn{
-				{"name", AlignLeft, 20},
+				{"name", AlignLeft, 25},
 				{"current-jobs-urgent", AlignRight, 21},
 				{"current-jobs-ready", AlignRight, 21},
 				{"current-jobs-reserved", AlignRight, 25},
